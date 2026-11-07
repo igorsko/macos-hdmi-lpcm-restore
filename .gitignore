@@ -1,0 +1,8 @@
+build/
+hdmi-lpcm
+*.log
+config.json
+*-test.json
+*.plist
+.DS_Store
+private/
