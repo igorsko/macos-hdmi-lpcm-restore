@@ -163,8 +163,6 @@ GitHub Actions runs the build and software checks on macOS. These checks do not 
 
 [Open an issue](https://github.com/igorsko/macos-hdmi-lpcm-restore/issues) with your macOS version, Mac model, TV/receiver models, selected sample rate and steps to reproduce the problem.
 
-Review diagnostic output before sharing it. Remove personal paths and device identifiers, and do not upload your saved `config.json` or system audio preference files.
-
 ## License
 
 Copyright (c) 2026 HDMI LPCM Restore contributors.
