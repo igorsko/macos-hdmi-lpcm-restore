@@ -12,7 +12,7 @@ cp build/hdmi-lpcm "$base/hdmi-lpcm"
 cp HDMILPCM.swift build.sh "$base/"
 # Capture must succeed before launchd is configured. No audio writes here.
 "$base/hdmi-lpcm" capture "$1" "$2" "$base/config.json"
-cp uninstall.sh "$base/uninstall.sh"
+cp uninstall.sh manage.sh "$base/"
 /usr/bin/plutil -create xml1 "$agent"
 /usr/bin/plutil -insert Label -string local.hdmi-lpcm "$agent"
 /usr/bin/plutil -insert ProgramArguments -json '[]' "$agent"

@@ -15,7 +15,8 @@ It is designed for setups where multichannel audio works correctly until the TV 
 - Selects only formats advertised by the connected device.
 - Checks the saved speaker mapping before and after changing the format.
 - Supports an existing 5.1 mapping with rear speakers assigned to channels 7 and 8.
-- Defers changes while an application is using the audio device.
+- Offers idle-only operation or automatic stereo recovery while audio applications remain open.
+- Provides status diagnostics, configuration backups and an explicit command to accept speaker-mapping changes.
 - Starts automatically when you log in to macOS.
 - Uses Apple Swift, CoreAudio and launchd; no Homebrew, third-party drivers or Accessibility access.
 
@@ -77,9 +78,41 @@ Choose a rate supported by your equipment. The installer captures the current sp
 
 ## Usage
 
-After installation, switch your TV and receiver off and on normally. The listener allows time for the HDMI connection to settle, then restores the configured format when the output is idle.
+After installation, switch your TV and receiver off and on normally. The listener allows time for the HDMI connection to settle, then restores the configured format. New installations default to the conservative `idle` policy.
 
-An application can keep the audio device busy even when playback is paused. In that case, restoration waits until the device is released; closing the player may be necessary.
+### Restore stereo audio while players remain open
+
+Browsers and players can keep HDMI audio busy even while paused. Enable `reconnect` mode to recover a stereo fallback without closing those applications:
+
+```sh
+sh "$HOME/Library/Application Support/HDMILPCM/manage.sh" policy reconnect
+```
+
+The output and advertised target formats must remain stable for at least eight seconds. Recovery while busy is limited to an LPCM stereo fallback, with at most one format-change attempt per minute. An exclusively owned device or a speaker-mapping mismatch still blocks changes. A format change may briefly interrupt playback; some applications may need playback restarted afterward.
+
+To return to idle-only operation:
+
+```sh
+sh "$HOME/Library/Application Support/HDMILPCM/manage.sh" policy idle
+```
+
+### Accept a speaker-mapping change
+
+If you intentionally change speaker assignments in Audio MIDI Setup, select the configured eight-channel format and sample rate, verify the assignments, then explicitly accept the new mapping:
+
+```sh
+sh "$HOME/Library/Application Support/HDMILPCM/manage.sh" accept-mapping
+```
+
+This updates only the saved reference, backs up the previous configuration, and restarts the listener. It never assigns speakers or accepts mapping changes automatically. Original stream formats are retained for rollback.
+
+### Diagnose the current state
+
+```sh
+sh "$HOME/Library/Application Support/HDMILPCM/manage.sh" status
+```
+
+Status reports both stream formats, the active policy, audio client bundle IDs when available, and the result of the mapping guard. A temporary stereo layout can be valid during recovery.
 
 To check the current physical and virtual formats and compare the speaker mapping with the saved configuration:
 
@@ -102,9 +135,9 @@ The program runs locally and does not send telemetry. Its saved configuration co
 | Symptom | What to check |
 | --- | --- |
 | Audio remains in stereo | Close applications using HDMI audio. Confirm that eight-channel LPCM is available in Audio MIDI Setup. |
-| `Audio device busy` | A player or another application still has the device open. Pausing may not release it. |
+| `Audio device busy` or waiting for idle | In `idle` mode, close the player. Alternatively, enable `reconnect` mode to recover a stable stereo fallback while the device is busy. |
 | Device absent | Check the HDMI connection. Changing ports or equipment may change the device UID. |
-| Mapping mismatch or `STOP` in the log | Review your speaker assignments. Automatic changes stop when the mapping guard fails. |
+| Mapping mismatch | Verify the assignments in Audio MIDI Setup. If the change was intentional, use `accept-mapping`; otherwise restore your intended assignments manually. |
 | Requested format not advertised | Select a sample rate supported by the HDMI device. The utility will not force an unsupported format. |
 
 Read recent diagnostic messages:
@@ -120,7 +153,17 @@ Inspect the background service:
 launchctl print "gui/$(id -u)/local.hdmi-lpcm"
 ```
 
-If the device UID or intended speaker mapping has changed, review the setup before creating a new configuration. The utility deliberately avoids selecting a replacement device automatically.
+The utility never selects a replacement device automatically. A changed HDMI UID requires a separate configuration review. Mapping failures suspend writes; the listener remains subscribed to changes and rechecks the guard on subsequent events.
+
+### Update an existing installation
+
+From an updated project checkout, run:
+
+```sh
+sh ./manage.sh update
+```
+
+The update builds and tests the new program, keeps the previous binary as `hdmi-lpcm.previous`, preserves your configuration and restarts the listener. Configuration changes keep private backups in `config-backups/` inside the installation directory.
 
 ## Uninstall and restore
 
@@ -141,7 +184,7 @@ Restoration checks the device identity and speaker mapping. If it cannot proceed
 
 ## How it works
 
-CoreAudio notifications trigger a short, bounded sequence of checks while the HDMI connection settles. The utility updates the physical and virtual stream formats only when needed, then reads them back and verifies the speaker mapping. A failed change triggers a best-effort rollback to the previous formats.
+CoreAudio notifications trigger a bounded recovery window of up to 75 seconds while the HDMI connection settles. Events join the current window instead of indefinitely postponing recovery. Mapping and format events reset the stability check; the write cooldown remains in effect across event bursts. The utility updates the physical and virtual stream formats only when needed, then reads them back and verifies the speaker mapping. A failed change triggers a best-effort rollback to the previous formats.
 
 It does not write speaker layouts, stereo channel assignments, volume, mute or the default audio output. Mapping checks include a read-only comparison with a macOS audio preferences file. That file is an undocumented implementation detail, so future macOS updates may require changes to the utility. If the saved mapping cannot be read or verified, format changes are blocked.
 
@@ -149,7 +192,7 @@ It does not write speaker layouts, stereo channel assignments, volume, mute or t
 
 A TV power-cycle test on an **Apple M4 Mac mini** reproduced a fallback to two-channel LPCM at 96 kHz. After the player released the output, the listener automatically restored eight-channel LPCM at 192 kHz. The complete speaker mapping matched the original configuration, including rear channels 7 and 8.
 
-This confirms one observed recovery on that setup. Other TVs, receivers and macOS versions have not been comprehensively validated. Physical speaker routing was not acoustically tested.
+A subsequent TV power-cycle test with `reconnect` mode restored 8 channels/192 kHz while Chrome remained open; Chrome was reported as an active audio client before and after recovery. The log did not record an in-use format write, so the device may have briefly become idle during the handshake. Forced busy-write timing and cooldown are covered by software tests, but a continuously busy hardware write has not yet been confirmed. These are observed recoveries on one setup. Other TVs, receivers and macOS versions have not been comprehensively validated. Physical speaker routing was not acoustically tested.
 
 Run the software checks locally:
 
@@ -157,11 +200,13 @@ Run the software checks locally:
 sh ./Tests/run.sh
 ```
 
-GitHub Actions runs the build and software checks on macOS. These checks do not replace testing with real HDMI equipment.
+Software checks cover format selection, mapping comparisons, stability timing and the recovery cooldown. GitHub Actions runs the build and software checks on macOS. These checks do not replace testing with real HDMI equipment.
 
 ## Reporting issues
 
 [Open an issue](https://github.com/igorsko/macos-hdmi-lpcm-restore/issues) with your macOS version, Mac model, TV/receiver models, selected sample rate and steps to reproduce the problem.
+
+Please redact personal information from any logs you attach.
 
 ## License
 
