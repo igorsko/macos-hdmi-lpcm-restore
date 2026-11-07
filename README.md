@@ -5,7 +5,7 @@
 [![macOS checks](https://github.com/igorsko/macos-hdmi-lpcm-restore/actions/workflows/test.yml/badge.svg)](https://github.com/igorsko/macos-hdmi-lpcm-restore/actions/workflows/test.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-HDMI LPCM Restore is a small native macOS utility that restores an HDMI output to **8-channel LPCM at 48, 96 or 192 kHz**. It listens for CoreAudio changes and runs in the background as a per-user LaunchAgent.
+HDMI LPCM Restore is a personal project developed for a Mac mini M4, a Sony BRAVIA Theatre Quad and a Philips 55PUS7503/12 TV. This small native macOS utility restores an HDMI output to **8-channel LPCM at 48, 96 or 192 kHz**. It listens for CoreAudio changes and runs in the background as a per-user LaunchAgent.
 
 It is designed for setups where multichannel audio works correctly until the TV or receiver is switched off, then macOS reconnects using a two-channel format. The utility restores the selected format while checking that your existing speaker mapping remains unchanged.
 
@@ -188,23 +188,32 @@ CoreAudio notifications trigger a bounded recovery window of up to 75 seconds wh
 
 It does not write speaker layouts, stereo channel assignments, volume, mute or the default audio output. Mapping checks include a read-only comparison with a macOS audio preferences file. That file is an undocumented implementation detail, so future macOS updates may require changes to the utility. If the saved mapping cannot be read or verified, format changes are blocked.
 
-## Tested behavior
+## Tested setup
 
-A TV power-cycle test on an **Apple M4 Mac mini** reproduced a fallback to two-channel LPCM at 96 kHz. After the player released the output, the listener automatically restored eight-channel LPCM at 192 kHz. The complete speaker mapping matched the original configuration, including rear channels 7 and 8.
+This utility was developed for personal use with the following equipment:
 
-A subsequent TV power-cycle test with `reconnect` mode restored 8 channels/192 kHz while Chrome remained open; Chrome was reported as an active audio client before and after recovery. The log did not record an in-use format write, so the device may have briefly become idle during the handshake. Forced busy-write timing and cooldown are covered by software tests, but a continuously busy hardware write has not yet been confirmed. These are observed recoveries on one setup. Other TVs, receivers and macOS versions have not been comprehensively validated. Physical speaker routing was not acoustically tested.
+| Component | Tested device or setting |
+| --- | --- |
+| Computer | Apple Mac mini with M4 chip |
+| Operating system | macOS 27.0.1 |
+| Audio system | Sony BRAVIA Theatre Quad |
+| Television | Philips 55PUS7503/12 (reported by macOS as `Philips FTV`) |
+| Target audio format | 8-channel LPCM at 192 kHz |
+| Speaker configuration | Existing 5.1 mapping, with rear speakers on channels 7 and 8 |
 
-Run the software checks locally:
+Hardware validation is limited to this personal setup.
+
+Switching the TV off and on reproduced a fallback to two-channel LPCM at 96 kHz. The listener restored eight-channel LPCM at 192 kHz and verified that the saved speaker mapping was unchanged.
+
+Recovery was also observed in `reconnect` mode with Chrome left open and reported as an active audio client before and after the change. The log did not record a write while the device was busy, so it may have briefly become idle during the HDMI handshake. A format change with the device continuously busy has not yet been confirmed on hardware. Physical speaker routing was not acoustically tested.
+
+### Software checks
 
 ```sh
 sh ./Tests/run.sh
 ```
 
-Software checks cover format selection, mapping comparisons, stability timing and the recovery cooldown. GitHub Actions runs the build and software checks on macOS. These checks do not replace testing with real HDMI equipment.
-
-## Reporting issues
-
-[Open an issue](https://github.com/igorsko/macos-hdmi-lpcm-restore/issues) with your macOS version, Mac model, TV/receiver models, selected sample rate and steps to reproduce the problem.
+The checks cover format selection, mapping comparisons, recovery timing and the cooldown between write attempts. GitHub Actions runs these checks on macOS; hardware results are described separately above.
 
 ## License
 
