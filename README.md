@@ -1,98 +1,174 @@
-# HDMI LPCM Restore for macOS
+# macOS HDMI LPCM Restore
 
-A small native Swift/CoreAudio listener that restores one HDMI output to **8-channel LPCM** at an explicitly configured sample rate (48, 96 or 192 kHz). Uses a per-user LaunchAgent and Apple Command Line Tools. No Homebrew, third-party audio driver, Accessibility permission, administrator service or periodic polling.
+**Automatically restore multichannel HDMI audio when your Mac returns to stereo after TV or receiver standby.**
 
-The HDMI endpoint may be named after the television even when a receiver or surround system handles the sound. Select it by its exact CoreAudio UID, never by a broad name match.
+[![macOS checks](https://github.com/igorsko/macos-hdmi-lpcm-restore/actions/workflows/test.yml/badge.svg)](https://github.com/igorsko/macos-hdmi-lpcm-restore/actions/workflows/test.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-## What it changes
+HDMI LPCM Restore is a small native macOS utility that restores an HDMI output to **8-channel LPCM at 48, 96 or 192 kHz**. It listens for CoreAudio changes and runs in the background as a per-user LaunchAgent.
 
-Only `kAudioStreamPropertyPhysicalFormat` and `kAudioStreamPropertyVirtualFormat`, and only when necessary. The sample rate and channel count are selected from the formats advertised by the device. Current bit depth and format flags are preferred where supported.
+It is designed for setups where multichannel audio works correctly until the TV or receiver is switched off, then macOS reconnects using a two-channel format. The utility restores the selected format while checking that your existing speaker mapping remains unchanged.
 
-The read-only saved-mapping guard inspects the target device entry in `/Library/Preferences/Audio/com.apple.audio.SystemSettings.plist`. This file is an undocumented implementation detail: an unreadable file or unexpected schema blocks writes. Future macOS versions may require an update.
+## Features
 
-The program never writes channel layouts, stereo channel assignments, volume, mute, default output or system audio preference files. It captures the current preferred channel layout, stereo assignments and saved surround configuration. It compares these before and after a format change and refuses to write if the saved baseline differs or cannot be read. A temporary two-channel layout is accepted only when it exactly matches the first two channel descriptions of the saved eight-channel baseline, one of the LPCM streams is still stereo, and the persisted surround mapping remains unchanged. A layout mismatch locks automatic attempts until the process is restarted after review. This preserves an existing 5.1 assignment with rear channels on 7/8 **when the driver continues to expose that saved mapping**; it does not create or repair a 5.1 mapping.
+- Detects HDMI device reconnections and audio format changes without periodic polling.
+- Selects only formats advertised by the connected device.
+- Checks the saved speaker mapping before and after changing the format.
+- Supports an existing 5.1 mapping with rear speakers assigned to channels 7 and 8.
+- Defers changes while an application is using the audio device.
+- Starts automatically when you log in to macOS.
+- Uses Apple Swift, CoreAudio and launchd; no Homebrew, third-party drivers or Accessibility access.
 
-CoreAudio drivers can have their own side effects. A failed write or readback triggers a best-effort rollback of the previous stream formats. No mapping is rewritten even during rollback. A missing/ambiguous UID, non-HDMI device, multiple output streams, unsupported format or active playback prevents changes. If the endpoint changes UID, review and capture a new baseline manually; the program will not guess another endpoint.
+The utility restores LPCM output. It does not encode Dolby Digital or Dolby Atmos, or create a surround speaker configuration.
 
-## Requirements and build
+## Requirements
 
 - macOS with Apple Swift 6 or newer and the CoreAudio SDK.
-- Apple Command Line Tools or Xcode. Run `xcode-select --install` yourself if missing.
-- A GUI login session for installation. Do not install with `sudo`.
+- Apple Command Line Tools or Xcode.
+- An HDMI output with a single output stream and support for 8-channel LPCM at the selected sample rate.
+- An existing explicit eight-channel speaker mapping in **Audio MIDI Setup**.
+
+Install from your normal macOS login session. Do not run the installer with `sudo`.
+
+## Quick start
+
+### 1. Download and build
+
+If Apple Command Line Tools are not installed, run:
 
 ```sh
+xcode-select --install
+```
+
+Once installation is complete:
+
+```sh
+git clone https://github.com/igorsko/macos-hdmi-lpcm-restore.git
+cd macos-hdmi-lpcm-restore
 sh ./build.sh
-./build/hdmi-lpcm self-test
 ./build/hdmi-lpcm list
 ```
 
-The build script prefers `/Library/Developer/CommandLineTools` locally when installed. It does not change the global developer selection or accept Xcode license terms.
+The build script uses the standalone Apple Command Line Tools when available without changing your global Xcode selection.
 
-## Install
+### 2. Prepare your HDMI output
 
-First configure and check the desired speaker mapping in Audio MIDI Setup. Baseline capture requires an explicit eight-channel mapping (not a two-channel endpoint or a layout tag without descriptions). Stop audio playback. Copy the exact HDMI UID printed by `list`, then:
+In **Audio MIDI Setup**, select your HDMI device, choose an eight-channel format and confirm your speaker assignments. This is the configuration the utility will preserve.
+
+Stop playback and close applications holding the audio output open. In the output of `list`, find your HDMI device and copy its exact `uid`. The device may appear under the TV's name even when a receiver handles the sound.
+
+### 3. Install
+
+Replace the placeholder with your HDMI device UID:
 
 ```sh
-sh ./install.sh 'YOUR_HDMI_DEVICE_UID' 192000
+sh ./install.sh 'YOUR_HDMI_DEVICE_UID' 48000
 ```
 
-Use `48000` instead for 48 kHz. The rate is explicit; no unsupported format is synthesized. Installation refuses to overwrite an existing installation or baseline.
+The second argument is the sample rate in hertz:
 
-The program and private configuration are saved under `~/Library/Application Support/HDMILPCM`. The per-user agent is `~/Library/LaunchAgents/local.hdmi-lpcm.plist`. It starts at login and restarts after process exit with a 30-second throttle. Installation immediately activates the listener and may restore the requested format if playback is idle.
+| Argument | Target format |
+| --- | --- |
+| `48000` | 8-channel LPCM, 48 kHz |
+| `96000` | 8-channel LPCM, 96 kHz |
+| `192000` | 8-channel LPCM, 192 kHz |
 
-## Event handling
+Choose a rate supported by your equipment. The installer captures the current speaker mapping and original audio formats, then starts the listener immediately. It refuses to overwrite an existing installation.
 
-The listener subscribes to device-list and CoreAudio service-restart events, plus the selected device's stream, alive, running and nominal-rate changes, and its stream's physical/virtual formats and available formats. It reattaches listeners after changes and schedules a bounded settling window at approximately 1, 3, 7 and 15 seconds after the latest event. New events supersede earlier attempts. There is no endless timer or playback loop. The transition to idle can trigger another attempt after playback ends.
+## Usage
 
-A running application may hold the audio device open even while apparently paused; in that case restoration remains deferred. Close that application's audio session if necessary. This program restores LPCM transport, not Dolby encoding or decoding.
+After installation, switch your TV and receiver off and on normally. The listener allows time for the HDMI connection to settle, then restores the configured format when the output is idle.
 
-## Inspect and verify
+An application can keep the audio device busy even when playback is paused. In that case, restoration waits until the device is released; closing the player may be necessary.
+
+To check the current physical and virtual formats and compare the speaker mapping with the saved configuration:
 
 ```sh
 base="$HOME/Library/Application Support/HDMILPCM"
 "$base/hdmi-lpcm" check "$base/config.json"
-launchctl print "gui/$(id -u)/local.hdmi-lpcm"
+```
+
+### Installation locations
+
+| Location | Contents |
+| --- | --- |
+| `~/Library/Application Support/HDMILPCM/` | Program, saved configuration and logs |
+| `~/Library/LaunchAgents/local.hdmi-lpcm.plist` | Automatic startup for your macOS user |
+
+The program runs locally and does not send telemetry. Its saved configuration contains your HDMI device identifier and speaker mapping.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Audio remains in stereo | Close applications using HDMI audio. Confirm that eight-channel LPCM is available in Audio MIDI Setup. |
+| `Audio device busy` | A player or another application still has the device open. Pausing may not release it. |
+| Device absent | Check the HDMI connection. Changing ports or equipment may change the device UID. |
+| Mapping mismatch or `STOP` in the log | Review your speaker assignments. Automatic changes stop when the mapping guard fails. |
+| Requested format not advertised | Select a sample rate supported by the HDMI device. The utility will not force an unsupported format. |
+
+Read recent diagnostic messages:
+
+```sh
+base="$HOME/Library/Application Support/HDMILPCM"
 tail -n 30 "$base/service.log" "$base/service-error.log"
 ```
 
-A complete physical test requires pausing playback, switching the TV off for about 15 seconds, switching it back on, waiting for the receiver and HDMI handshake, then checking both formats and the unchanged mapping. Repeat at least twice. Confirm rear-speaker routing in Audio MIDI Setup at a comfortable volume. Software tests alone cannot validate physical speaker routing or a power-cycle handshake.
+Inspect the background service:
 
-## Rollback
+```sh
+launchctl print "gui/$(id -u)/local.hdmi-lpcm"
+```
 
-Stop the listener and remove automatic startup, keeping private snapshots and logs:
+If the device UID or intended speaker mapping has changed, review the setup before creating a new configuration. The utility deliberately avoids selecting a replacement device automatically.
+
+## Uninstall and restore
+
+Stop the listener and remove automatic startup:
 
 ```sh
 sh "$HOME/Library/Application Support/HDMILPCM/uninstall.sh"
 ```
 
-To additionally restore the stream formats captured during installation, stop playback, reconnect the same HDMI endpoint, then run:
+The program, saved configuration and logs remain available for review. To also attempt restoration of the original audio formats **after uninstalling**, reconnect the same HDMI device, close audio players and run:
 
 ```sh
-sh "$HOME/Library/Application Support/HDMILPCM/uninstall.sh" --restore-format
+base="$HOME/Library/Application Support/HDMILPCM"
+"$base/hdmi-lpcm" restore "$base/config.json"
 ```
 
-Restoration uses the same HDMI identity and mapping guards. If it fails, automatic startup has already stopped; inspect the error and select the format manually in Audio MIDI Setup. To remove the retained files after review:
+Restoration checks the device identity and speaker mapping. If it cannot proceed, select the required format manually in Audio MIDI Setup.
 
-```sh
-rm -r "$HOME/Library/Application Support/HDMILPCM"
-```
+## How it works
 
-Do not replace global audio preference files as a routine rollback; they contain other devices' settings.
+CoreAudio notifications trigger a short, bounded sequence of checks while the HDMI connection settles. The utility updates the physical and virtual stream formats only when needed, then reads them back and verifies the speaker mapping. A failed change triggers a best-effort rollback to the previous formats.
 
-## Tests and limitations
+It does not write speaker layouts, stereo channel assignments, volume, mute or the default audio output. Mapping checks include a read-only comparison with a macOS audio preferences file. That file is an undocumented implementation detail, so future macOS updates may require changes to the utility. If the saved mapping cannot be read or verified, format changes are blocked.
+
+## Tested behavior
+
+A TV power-cycle test on an **Apple M4 Mac mini** reproduced a fallback to two-channel LPCM at 96 kHz. After the player released the output, the listener automatically restored eight-channel LPCM at 192 kHz. The complete speaker mapping matched the original configuration, including rear channels 7 and 8.
+
+This confirms one observed recovery on that setup. Other TVs, receivers and macOS versions have not been comprehensively validated. Physical speaker routing was not acoustically tested.
+
+Run the software checks locally:
 
 ```sh
 sh ./Tests/run.sh
 ```
 
-Tests cover advertised format selection, channel/rate rejection, LPCM filtering, rate ranges, snapshot validation, invalid commands and the constrained write surface. CI builds on a hosted macOS runner, which cannot validate a real HDMI handshake.
+GitHub Actions runs the build and software checks on macOS. These checks do not replace testing with real HDMI equipment.
 
-Local validation used an Apple M4 Mac mini and an HDMI TV/receiver endpoint already at 8 channels/192 kHz. Baseline capture, idempotent operation, nonexistent-device rejection, changed-mapping rejection, compilation without warnings and LaunchAgent startup were checked. A physical TV power cycle was observed to return the endpoint to two-channel LPCM at 96 kHz. The persisted 5.1 mapping was unchanged while CoreAudio exposed a temporary stereo layout. Restoration was safely deferred while an application kept the device busy. When the player released the device, the running listener automatically restored physical LPCM 8 channels/192 kHz/24 bit and virtual LPCM 8 channels/192 kHz/32 bit. The complete preferred mapping and saved surround configuration matched the original baseline, including rear channels 7/8. This is one observed power-cycle recovery, not a guarantee for every TV, receiver, app or macOS version. Physical acoustic routing was not tested by this software check.
+## Reporting issues
 
-## Privacy
+[Open an issue](https://github.com/igorsko/macos-hdmi-lpcm-restore/issues) with your macOS version, Mac model, TV/receiver models, selected sample rate and steps to reproduce the problem.
 
-Only generic source, scripts, documentation and CI belong in this repository. The baseline contains a device UID, mapping and original formats and stays in the local Application Support directory. Do not publish it, logs, system preference snapshots, hardware reports, usernames, home paths or compiled binaries. `.gitignore` excludes common generated files, but review your changes before publishing.
+Review diagnostic output before sharing it. Remove personal paths and device identifiers, and do not upload your saved `config.json` or system audio preference files.
 
-Apple API references: [property listeners](https://developer.apple.com/documentation/coreaudio/audioobjectaddpropertylistenerblock(_:_:_:_:)), [physical formats](https://developer.apple.com/documentation/coreaudio/kaudiostreampropertyavailablephysicalformats), [preferred channel layout](https://developer.apple.com/documentation/coreaudio/kaudiodevicepropertypreferredchannellayout).
+## License
 
-Licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0-only). Copyright (c) 2026 HDMI LPCM Restore contributors. Not affiliated with Apple or any TV/audio manufacturer.
+Copyright (c) 2026 HDMI LPCM Restore contributors.
+
+Licensed under the [GNU General Public License v3.0](LICENSE), **GPL-3.0-only**.
+
+Not affiliated with Apple or any TV or audio equipment manufacturer.
