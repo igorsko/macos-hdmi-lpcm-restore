@@ -206,8 +206,6 @@ Software checks cover format selection, mapping comparisons, stability timing an
 
 [Open an issue](https://github.com/igorsko/macos-hdmi-lpcm-restore/issues) with your macOS version, Mac model, TV/receiver models, selected sample rate and steps to reproduce the problem.
 
-Please redact personal information from any logs you attach.
-
 ## License
 
 Copyright (c) 2026 HDMI LPCM Restore contributors.
