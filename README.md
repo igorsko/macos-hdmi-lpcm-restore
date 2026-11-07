@@ -95,4 +95,4 @@ Only generic source, scripts, documentation and CI belong in this repository. Th
 
 Apple API references: [property listeners](https://developer.apple.com/documentation/coreaudio/audioobjectaddpropertylistenerblock(_:_:_:_:)), [physical formats](https://developer.apple.com/documentation/coreaudio/kaudiostreampropertyavailablephysicalformats), [preferred channel layout](https://developer.apple.com/documentation/coreaudio/kaudiodevicepropertypreferredchannellayout).
 
-MIT licensed. Not affiliated with Apple or any TV/audio manufacturer.
+Licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0-only). Copyright (c) 2026 HDMI LPCM Restore contributors. Not affiliated with Apple or any TV/audio manufacturer.
